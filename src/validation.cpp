@@ -3487,24 +3487,27 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 
 static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev, CAssetsCache* assetCache)
 {
+    LogPrintf("%s : 0\n", __func__);
     const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
-
+    LogPrintf("%s : 1\n", __func__);
     // Start enforcing BIP113 (Median Time Past) using versionbits logic.
     int nLockTimeFlags = 0;
     if(consensusParams.nCSVEnabled == true) {
     		nLockTimeFlags |= LOCKTIME_MEDIAN_TIME_PAST;
     }
+    LogPrintf("%s : 2\n", __func__);
 
     int64_t nLockTimeCutoff = (nLockTimeFlags & LOCKTIME_MEDIAN_TIME_PAST)
                               ? pindexPrev->GetMedianTimePast()
                               : block.GetBlockTime();
-
+    LogPrintf("%s : 3\n", __func__);
     // Check that all transactions are finalized
     for (const auto& tx : block.vtx) {
+        LogPrintf("%s : 4\n", __func__);
         if (!IsFinalTx(*tx, nHeight, nLockTimeCutoff)) {
             return state.DoS(10, false, REJECT_INVALID, "bad-txns-nonfinal", false, "non-final transaction");
         }
-
+        LogPrintf("%s : 5\n", __func__);
         if (tx->IsReissueAsset()) {
             CReissueAsset reissue;
             std::string strAddress;
@@ -3515,11 +3518,12 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
             if (!reissue.IsValid(strError, *assetCache))
                 return state.DoS(100, false, REJECT_INVALID, "bad-txns-" + strError);
         }
+        LogPrintf("%s : 6\n", __func__);
     }
-
+    LogPrintf("%s : 7\n", __func__);
     // Enforce rule that the coinbase starts with serialized block height
     CScript expect = CScript() << nHeight;
-
+    LogPrintf("%s : 8\n", __func__);
     if (consensusParams.nBIP34Enabled)
     {
 		if (block.vtx[0]->vin[0].scriptSig.size() < expect.size() ||
@@ -3527,6 +3531,7 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
 			return state.DoS(100, false, REJECT_INVALID, "bad-cb-height", false, "block height mismatch in coinbase");
 		}
     }
+    LogPrintf("%s : 9\n", __func__);
     // Validation for witness commitments.
     // * We compute the witness hash (which is the hash including witnesses) of all the block's transactions, except the
     //   coinbase (where 0x0000....0000 is used instead).
@@ -3642,17 +3647,19 @@ bool ProcessNewBlockHeaders(const std::vector<CBlockHeader>& headers, CValidatio
 /** Store block on disk. If dbp is non-nullptr, the file is known to already reside on disk */
 static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex, bool fRequested, const CDiskBlockPos* dbp, bool* fNewBlock)
 {
+    LogPrintf("%s: 1\n", __func__);
     const CBlock& block = *pblock;
-
+    LogPrintf("%s: 2\n", __func__);
     if (fNewBlock) *fNewBlock = false;
     AssertLockHeld(cs_main);
 
+    LogPrintf("%s: 3\n", __func__);
     CBlockIndex *pindexDummy = nullptr;
     CBlockIndex *&pindex = ppindex ? *ppindex : pindexDummy;
-
+    LogPrintf("%s: 4\n", __func__);
     if (!AcceptBlockHeader(block, state, chainparams, &pindex))
         return false;
-
+    LogPrintf("%s: 5\n", __func__);
     // Try to process all requested blocks that we don't have, but only
     // process an unrequested block if it's new and has enough work to
     // advance our tip, and isn't too many blocks ahead.
@@ -3664,7 +3671,7 @@ static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidation
     // regardless of whether pruning is enabled; it should generally be safe to
     // not process unrequested blocks.
     bool fTooFarAhead = (pindex->nHeight > int(chainActive.Height() + MIN_BLOCKS_TO_KEEP));
-
+    LogPrintf("%s: 6\n", __func__);
     // TODO: Decouple this function from the block download logic by removing fRequested
     // This requires some new chain data structure to efficiently look up if a
     // block is in a chain leading to a candidate for best tip, despite not
@@ -3673,7 +3680,9 @@ static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidation
     // TODO: deal better with return value and error conditions for duplicate
     // and unrequested blocks.
     if (fAlreadyHave) return true;
+    LogPrintf("%s: 7\n", __func__);
     if (!fRequested) {  // If we didn't ask for it:
+        LogPrintf("%s: 8\n", __func__);
         if (pindex->nTx != 0) return true;  // This is a previously-processed block that was pruned
         if (!fHasMoreWork) return true;     // Don't process less-work chains
         if (fTooFarAhead) return true;      // Block height is too high
@@ -3684,27 +3693,31 @@ static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidation
         // request; don't process these.
         if (pindex->nChainWork < nMinimumChainWork) return true;
     }
+    LogPrintf("%s: 9\n", __func__);
 
     if (fNewBlock) *fNewBlock = true;
-
+    LogPrintf("%s: 10\n", __func__);
     if (!CheckBlock(block, state, chainparams.GetConsensus()) ||
         !ContextualCheckBlock(block, state, chainparams.GetConsensus(), pindex->pprev, passets)) {
+        LogPrintf("%s: 11\n", __func__);
         if (state.IsInvalid() && !state.CorruptionPossible()) {
             pindex->nStatus |= BLOCK_FAILED_VALID;
             setDirtyBlockIndex.insert(pindex);
         }
         return error("%s: %s", __func__, FormatStateMessage(state));
     }
+    LogPrintf("%s: 12\n", __func__);
 
     // Header is valid/has work, merkle tree and segwit merkle tree are good...RELAY NOW
     // (but if it does not build on our best tip, let the SendMessages loop relay it)
     if (!IsInitialBlockDownload() && chainActive.Tip() == pindex->pprev)
         GetMainSignals().NewPoWValidBlock(pindex, pblock);
-
+    LogPrintf("%s: 13\n", __func__);
     int nHeight = pindex->nHeight;
-
+    LogPrintf("%s: 14\n", __func__);
     // Write block to history file
     try {
+        LogPrintf("%s: 15\n", __func__);
         unsigned int nBlockSize = ::GetSerializeSize(block, SER_DISK, CLIENT_VERSION);
         CDiskBlockPos blockPos;
         if (dbp != nullptr)
@@ -3716,6 +3729,7 @@ static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidation
                 AbortNode(state, "Failed to write block");
         if (!ReceivedBlockTransactions(block, state, pindex, blockPos, chainparams.GetConsensus()))
             return error("AcceptBlock(): ReceivedBlockTransactions failed");
+        LogPrintf("%s: 16\n", __func__);
     } catch (const std::runtime_error& e) {
         return AbortNode(state, std::string("System error: ") + e.what());
     }
@@ -4534,39 +4548,51 @@ bool LoadGenesisBlock(const CChainParams& chainparams)
 
 bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskBlockPos *dbp)
 {
+    int i = 0;
+    LogPrintf("%s: %d\n", __func__, i++);
     // Map of disk positions for blocks with unknown parent (only used for reindex)
     static std::multimap<uint256, CDiskBlockPos> mapBlocksUnknownParent;
     int64_t nStart = GetTimeMillis();
-
+    LogPrintf("%s: %d\n", __func__, i++);
     int nLoaded = 0;
     try {
+        LogPrintf("%s: %d\n", __func__, i++);
         // This takes over fileIn and calls fclose() on it in the CBufferedFile destructor
         CBufferedFile blkdat(fileIn, 2*GetMaxBlockSerializedSize(), GetMaxBlockSerializedSize()+8, SER_DISK, CLIENT_VERSION);
         uint64_t nRewind = blkdat.GetPos();
+        LogPrintf("%s: %d\n", __func__, i++);
         while (!blkdat.eof()) {
+            LogPrintf("%s: Looping\n", __func__);
             boost::this_thread::interruption_point();
 
             blkdat.SetPos(nRewind);
             nRewind++; // start one byte further next time, in case of failure
             blkdat.SetLimit(); // remove former limit
+            LogPrintf("%s: Looping 0\n", __func__);
             unsigned int nSize = 0;
             try {
+                LogPrintf("%s: Looping 1\n", __func__);
                 // locate a header
                 unsigned char buf[CMessageHeader::MESSAGE_START_SIZE];
                 blkdat.FindByte(chainparams.MessageStart()[0]);
                 nRewind = blkdat.GetPos()+1;
                 blkdat >> FLATDATA(buf);
+                LogPrintf("%s: Looping 2\n", __func__);
                 if (memcmp(buf, chainparams.MessageStart(), CMessageHeader::MESSAGE_START_SIZE))
                     continue;
+                LogPrintf("%s: Looping 3\n", __func__);
                 // read size
                 blkdat >> nSize;
+                LogPrintf("%s: Looping 4\n", __func__);
                 if (nSize < 80 || nSize > GetMaxBlockSerializedSize())
                     continue;
+                LogPrintf("%s: Looping 5\n", __func__);
             } catch (const std::exception&) {
                 // no valid block header found; don't complain
                 break;
             }
             try {
+                LogPrintf("%s: Looping 6\n", __func__);
                 // read block
                 uint64_t nBlockPos = blkdat.GetPos();
                 if (dbp)
@@ -4577,37 +4603,48 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                 CBlock& block = *pblock;
                 blkdat >> block;
                 nRewind = blkdat.GetPos();
+                LogPrintf("%s: Looping 7\n", __func__);
 
                 // detect out of order blocks, and store them for later
                 uint256 hash = block.GetHash();
+                LogPrintf("%s: Looping 8\n", __func__);
                 if (hash != chainparams.GetConsensus().hashGenesisBlock && mapBlockIndex.find(block.hashPrevBlock) == mapBlockIndex.end()) {
+                    LogPrintf("%s: Looping 9\n", __func__);
                     LogPrint(BCLog::REINDEX, "%s: Out of order block %s, parent %s not known\n", __func__, hash.ToString(),
                             block.hashPrevBlock.ToString());
-                    if (dbp)
+                    if (dbp) {
+                        LogPrintf("%s: Looping 10\n", __func__);
                         mapBlocksUnknownParent.insert(std::make_pair(block.hashPrevBlock, *dbp));
+                    }
                     continue;
                 }
-
+                LogPrintf("%s: Looping 11\n", __func__);
                 // process in case the block isn't known yet
                 if (mapBlockIndex.count(hash) == 0 || (mapBlockIndex[hash]->nStatus & BLOCK_HAVE_DATA) == 0) {
+                    LogPrintf("%s: Looping 12\n", __func__);
                     LOCK(cs_main);
                     CValidationState state;
+                    LogPrintf("%s: Looping 13\n", __func__);
                     if (AcceptBlock(pblock, state, chainparams, nullptr, true, dbp, nullptr)) {
                         nLoaded++;
                     }
+                    LogPrintf("%s: Looping 14\n", __func__);
                     if (state.IsError())
                         break;
                 } else if (hash != chainparams.GetConsensus().hashGenesisBlock && mapBlockIndex[hash]->nHeight % 1000 == 0) {
+                    LogPrintf("%s: Looping 15\n", __func__);
                     LogPrint(BCLog::REINDEX, "Block Import: already had block %s at height %d\n", hash.ToString(), mapBlockIndex[hash]->nHeight);
                 }
 
                 // Activate the genesis block so normal node progress can continue
                 if (hash == chainparams.GetConsensus().hashGenesisBlock) {
+                    LogPrintf("%s: Looping 16\n", __func__);
                     CValidationState state;
                     if (!ActivateBestChain(state, chainparams)) {
                         break;
                     }
                 }
+                LogPrintf("%s: Looping 17\n", __func__);
 
                 NotifyHeaderTip();
 
@@ -4615,27 +4652,33 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                 std::deque<uint256> queue;
                 queue.push_back(hash);
                 while (!queue.empty()) {
+                    LogPrintf("%s: Looping 18\n", __func__);
                     uint256 head = queue.front();
                     queue.pop_front();
                     std::pair<std::multimap<uint256, CDiskBlockPos>::iterator, std::multimap<uint256, CDiskBlockPos>::iterator> range = mapBlocksUnknownParent.equal_range(head);
                     while (range.first != range.second) {
+                        LogPrintf("%s: Looping 19\n", __func__);
                         std::multimap<uint256, CDiskBlockPos>::iterator it = range.first;
                         std::shared_ptr<CBlock> pblockrecursive = std::make_shared<CBlock>();
                         if (ReadBlockFromDisk(*pblockrecursive, it->second, chainparams.GetConsensus()))
                         {
+                            LogPrintf("%s: Looping 20\n", __func__);
                             LogPrint(BCLog::REINDEX, "%s: Processing out of order child %s of %s\n", __func__, pblockrecursive->GetHash().ToString(),
                                     head.ToString());
                             LOCK(cs_main);
                             CValidationState dummy;
                             if (AcceptBlock(pblockrecursive, dummy, chainparams, nullptr, true, &it->second, nullptr))
                             {
+                                LogPrintf("%s: Looping 21\n", __func__);
                                 nLoaded++;
                                 queue.push_back(pblockrecursive->GetHash());
                             }
+                            LogPrintf("%s: Looping 22\n", __func__);
                         }
                         range.first++;
                         mapBlocksUnknownParent.erase(it);
                         NotifyHeaderTip();
+                        LogPrintf("%s: Looping 23\n", __func__);
                     }
                 }
             } catch (const std::exception& e) {
@@ -4647,6 +4690,7 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
     }
     if (nLoaded > 0)
         LogPrintf("Loaded %i blocks from external file in %dms\n", nLoaded, GetTimeMillis() - nStart);
+    LogPrintf("%s: ENDDDDDDDD\n", __func__);
     return nLoaded > 0;
 }
 
